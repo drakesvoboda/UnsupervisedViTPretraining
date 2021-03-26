@@ -25,12 +25,9 @@ class ViTEmbedding(nn.Module):
         im = F.pad(im, (0, 0, h%self.patch_size[0], w%self.patch_size[1]))
         patches = im.unfold(2, *self.patch_size).unfold(3, *self.patch_size).permute(0, 2, 3, 1, 4, 5).contiguous() 
         position_embeddings = F.interpolate(self.positions, patches.shape[1:3])
-
         patches = patches.flatten(start_dim=3).flatten(start_dim=1, end_dim=2)
         position_embeddings = position_embeddings.flatten(start_dim=2).permute(0, 2, 1)
-
         embeds = self.patch_embedding(patches) + position_embeddings
-
         b, s, d = embeds.shape
         cls_embedding = self.cls_embedding.repeat(b, 1, 1)
         embeds = torch.cat((cls_embedding, embeds), dim=1)
@@ -54,13 +51,20 @@ class ViT(nn.Module):
     def forward(self, im):
         return self.transformer(inputs_embeds=self.embedding(im))
 
-class ViTForClassification(ViT):
+class ViTForSequenceEncoding(ViT):
+    def __init__(self, input_channels=3, hidden_size=768, patch_size=16, position_embed_shape=(7,7)): 
+        super().__init__(input_channels, hidden_size, patch_size, position_embed_shape)
+
+    def forward(self, im):
+        return super().forward(im)[1]
+
+class ViTForClassification(ViTForSequenceEncoding):
     def __init__(self, num_classes, input_channels=3, hidden_size=768, patch_size=16, position_embed_shape=(7,7)): 
         super().__init__(input_channels, hidden_size, patch_size, position_embed_shape)
         self.dropout = nn.Dropout(self.config.hidden_dropout_prob)
         self.classifier = nn.Linear(hidden_size, num_classes)
 
     def forward(self, im):
-        encoded = super().forward(im)[1]
+        encoded = super().forward(im)
         encoded = self.dropout(encoded)
         return self.classifier(encoded)

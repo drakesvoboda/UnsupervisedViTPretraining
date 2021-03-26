@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import math
 import numpy as np
 
@@ -22,10 +24,15 @@ class SimCLR(nn.Module):
             nn.Linear(hidden_size, representation_dim)
         )
 
-    def forward(self, x_i, x_j):
+    def forward(self, input: Tuple[torch.tensor, torch.tensor]):
         """ forward pass on a positive example pair """
 
-        z_i = self.projection(self.encoder(x_i))
-        z_j = self.projection(self.encoder(x_j))
+        bs = input[0].shape[0]
+
+        input = torch.cat(input, dim=0)
+
+        embeds = self.projection(self.encoder(input))
+
+        z_i, z_j = torch.split(embeds, bs)
 
         return z_i, z_j

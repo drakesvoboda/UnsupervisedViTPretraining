@@ -10,7 +10,7 @@ class TransformsSimCLR:
     denoted x ̃i and x ̃j, which we consider as a positive pair.
     """
 
-    def __init__(self, size):
+    def __init__(self, size, norm=lambda x:x):
         s = 1
         color_jitter = torchvision.transforms.ColorJitter(
             0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s
@@ -22,6 +22,7 @@ class TransformsSimCLR:
                 torchvision.transforms.RandomApply([color_jitter], p=0.8),
                 torchvision.transforms.RandomGrayscale(p=0.2),
                 torchvision.transforms.ToTensor(),
+                norm
             ]
         )
 
@@ -29,6 +30,7 @@ class TransformsSimCLR:
             [
                 torchvision.transforms.Resize(size=size),
                 torchvision.transforms.ToTensor(),
+                norm
             ]
         )
 
