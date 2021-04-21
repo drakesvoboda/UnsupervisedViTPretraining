@@ -1,24 +1,29 @@
-import math
-import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.modules.utils import _pair 
 
-import torchvision
-import torchvision.transforms as transforms
+from transformers import BertConfig
+from transformers import BertConfig, PreTrainedModel
+from transformers.models.bert.modeling_bert import BertEncoder, BertPooler
+from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
 
-from transformers import BertConfig, BertModel
-
-class ViTEmbedding(nn.Module):
-    def __init__(self, input_channels, embed_dim, patch_size, position_embed_shape):
-        super().__init__()
+class ViTConfig(BertConfig):
+    def __init__(self, input_channels=3, patch_size=(16,16), position_embed_shape=(7,7), *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.input_channels = input_channels
         self.patch_size = _pair(patch_size)
         self.position_embed_shape = _pair(position_embed_shape)
-        self.positions = nn.Parameter(torch.randn(1, embed_dim, *self.position_embed_shape))
-        self.patch_embedding = nn.Linear(input_channels * self.patch_size[0] * self.patch_size[1], embed_dim)
-        self.cls_embedding = nn.Parameter(torch.randn(1, 1, embed_dim))
+
+class ViTEmbedding(nn.Module):
+    def __init__(self, config: ViTConfig):
+        super().__init__()
+        self.config = config
+        self.patch_size = config.patch_size
+        self.position_embed_shape = config.position_embed_shape
+        self.positions = nn.Parameter(torch.randn(1, config.hidden_size, *self.position_embed_shape))
+        self.patch_embedding = nn.Linear(config.input_channels * self.patch_size[0] * self.patch_size[1], config.hidden_size)
+        self.cls_embedding = nn.Parameter(torch.randn(1, 1, config.hidden_size))
 
     def forward(self, im):
         b, c, h, w = im.shape
@@ -34,37 +39,42 @@ class ViTEmbedding(nn.Module):
 
         return embeds
 
-class ViT(nn.Module):
-    def __init__(self, input_channels=3, hidden_size=768, patch_size=16, position_embed_shape=(7,7)):
-        super().__init__()
-        self.embedding = ViTEmbedding(input_channels, hidden_size, patch_size, position_embed_shape)
+class ViT(PreTrainedModel):
+    def __init__(self, config: ViTConfig, add_pooling_layer=True):
+        super().__init__(config)
+        self.config = config
+        self.embedding = ViTEmbedding(config)
+        self.encoder = BertEncoder(config)
+        self.pooler = BertPooler(config) if add_pooling_layer else None
 
-        self.config = BertConfig(
-            intermediate_size=hidden_size*4,
-            hidden_size=hidden_size,
-            num_hidden_layers=8, 
-            num_attention_heads=8
+    def forward(self, pixel_values, return_dict=None, *args, **kwargs):
+        embedding_output = self.embedding(pixel_values)
+        encoder_outputs = self.encoder(embedding_output)
+
+        sequence_output = encoder_outputs[0]
+        pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
+
+        if not return_dict:
+            return (sequence_output, pooled_output) + encoder_outputs[1:]
+
+        return BaseModelOutputWithPoolingAndCrossAttentions(
+            last_hidden_state=sequence_output,
+            pooler_output=pooled_output,
+            past_key_values=encoder_outputs.past_key_values,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+            cross_attentions=encoder_outputs.cross_attentions,
         )
 
-        self.transformer = BertModel(self.config)
-
-    def forward(self, im):
-        return self.transformer(inputs_embeds=self.embedding(im))
-
 class ViTForSequenceEncoding(ViT):
-    def __init__(self, input_channels=3, hidden_size=768, patch_size=16, position_embed_shape=(7,7)): 
-        super().__init__(input_channels, hidden_size, patch_size, position_embed_shape)
+    def forward(self, pixel_values, *args, **kwargs):
+        return super().forward(pixel_values, return_dict=False)[1]
 
-    def forward(self, im):
-        return super().forward(im)[1]
+class ViTForSequenceClassification(ViTForSequenceEncoding):
+    def __init__(self, config: ViTConfig, add_pooling_layer=True):
+        super().__init__(config)
+        self.cls = nn.Linear(config.hidden_size, config.num_classes) 
 
-class ViTForClassification(ViTForSequenceEncoding):
-    def __init__(self, num_classes, input_channels=3, hidden_size=768, patch_size=16, position_embed_shape=(7,7)): 
-        super().__init__(input_channels, hidden_size, patch_size, position_embed_shape)
-        self.dropout = nn.Dropout(self.config.hidden_dropout_prob)
-        self.classifier = nn.Linear(hidden_size, num_classes)
-
-    def forward(self, im):
-        encoded = super().forward(im)
-        encoded = self.dropout(encoded)
-        return self.classifier(encoded)
+    def forward(self, pixel_values, *args, **kwargs):
+        encoded = super().forward(pixel_values)
+        return self.cls(encoded)
