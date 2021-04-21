@@ -41,9 +41,11 @@ class ViTEmbedding(nn.Module):
         return embeds
 
 class ViT(PreTrainedModel):
+    config_class = ViTConfig
+
     def __init__(self, config: ViTConfig, add_pooling_layer=True):
         super().__init__(config)
-        self.config_class = ViTConfig
+        
         self.config = config
         self.embedding = ViTEmbedding(config)
         self.encoder = BertEncoder(config)
