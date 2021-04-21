@@ -9,11 +9,12 @@ from transformers.models.bert.modeling_bert import BertEncoder, BertPooler
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
 
 class ViTConfig(BertConfig):
-    def __init__(self, input_channels=3, patch_size=(16,16), position_embed_shape=(7,7), *args, **kwargs):
+    def __init__(self, input_channels=3, patch_size=(16,16), position_embed_shape=(7,7), num_classes=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.input_channels = input_channels
         self.patch_size = _pair(patch_size)
         self.position_embed_shape = _pair(position_embed_shape)
+        self.num_classes = num_classes
 
 class ViTEmbedding(nn.Module):
     def __init__(self, config: ViTConfig):
@@ -42,6 +43,7 @@ class ViTEmbedding(nn.Module):
 class ViT(PreTrainedModel):
     def __init__(self, config: ViTConfig, add_pooling_layer=True):
         super().__init__(config)
+        self.config_class = ViTConfig
         self.config = config
         self.embedding = ViTEmbedding(config)
         self.encoder = BertEncoder(config)
